@@ -70,7 +70,7 @@ class TpayAcceptPaymentView(PaymentDetailsView):
             logger.error('%s - ordere number (%s) does not match tr_dest field : (%s)' % (LOGGING_PREFIX, order.number,post.get('tr_dest')))
             return HttpResponseNotFound()
 
- #check sum match                                                                                                                                                                 
+#check sum match
         try:
             tpay_paid = D(post.get('tr_paid'))
             tpay_amount = D(post.get('tr_amount'))
@@ -78,11 +78,13 @@ class TpayAcceptPaymentView(PaymentDetailsView):
             logger.error('%s - Unable to reead numeric values from tr_paid : (%s) and tr_amount : (%s)' % (LOGGING_PREFIX, post.get('tr_paid'),post.get('tr_amount')))
             return HttpResponseNotFound()
 
+        # we accept any paid amount just log an error
         if order.total_incl_tax != tpay_paid:
             logger.error('%s - order amount and paid do not match: (%s) : (%s)' % (LOGGING_PREFIX, order.total_incl_tax,tpay_paid))
-            return HttpResponseNotFound()
+            #return HttpResponseNotFound()
 
-        #check md5 is OK                                                                                                                                                                 
+        #check md5 is OK                                                                                                             
+
         md5 = hashlib.md5()
         md5.update(settings.TPAY_ID+post.get('tr_id')+str(tpay_paid)+post.get('tr_crc')+settings.TPAY_SEC_CODE)
 
@@ -90,42 +92,36 @@ class TpayAcceptPaymentView(PaymentDetailsView):
             logger.error('%s - MD5SUM does not match :  (%s)' % (LOGGING_PREFIX, md5.hexdigest()))
             return HttpResponseNotFound()
 
-        # Payment successful! Record payment source                                                                                                    
-        self.handle_payment(order.number,order)
+        # Payment successful! Record payment source                                                                                  
+        self.handle_payment(order.number,order,tpay_paid)
 
-        # save payment event                                                                                                                                                             
+        # save payment event                                                                                                         
         self.save_payment_details(order)
 
-        #just 200 OK response to make tpay happy                                                                                                                                         
+        #just 200 OK response to make tpay happy                                                                                     
         return HttpResponse('TRUE')
 
-        #return HttpResponseRedirect(reverse('basket:summary'))          
-
-
-    def handle_payment(self, order_number, order, **kwargs):
+    def handle_payment(self, order_number, order, tpay_paid, **kwargs):
 
         source_type, __ = SourceType.objects.get_or_create(name='tpay')
-        try:
-            s = Source.objects.get(source_type=source_type,reference=str(order_number))
-            logger.info('Order alredy paid: (%s)' % s)
-            messages.error(self.request, _("This order is already paid"))
-            return HttpResponseRedirect(reverse('basket:summary'))
+        #try:
+        #    s = Source.objects.get(source_type=source_type,reference=str(order_number))
+        #    logger.info('Order alredy paid: (%s)' % s)
+        #    messages.error(self.request, _("This order is already paid"))
+        #    return HttpResponseRedirect(reverse('basket:summary'))
 
-        except Source.MultipleObjectsReturned,e:
-            messages.error(self.request, _("This order is already paid multiple times - this is serious error !"))
-            messages.error(self.request, e.message)
-            return HttpResponseRedirect(reverse('basket:summary'))
-
-        except:
-            pass
+        #except Source.MultipleObjectsReturned,e:
+        #    messages.error(self.request, _("This order is already paid multiple times - this is serious error !"))
+        #    messages.error(self.request, e.message)
+        #    return HttpResponseRedirect(reverse('basket:summary'))
 
         source = Source(
             source_type=source_type,
-            amount_allocated=order.total_incl_tax,
+            amount_allocated=tpay_paid,
             reference=str(order.number))
 
         self.add_payment_source(source)
 
         # Record payment event
-        self.add_payment_event('tpay', order.total_incl_tax)
+        self.add_payment_event('tpay', tpay_paid)
 

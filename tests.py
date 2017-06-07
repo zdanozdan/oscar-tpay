@@ -6,11 +6,12 @@ Replace this with more appropriate tests for your application.
 """
 
 from django.test import TestCase
+from utils import build_tpay_request
 
 
-class SimpleTest(TestCase):
-    def test_basic_addition(self):
+class TpayTest(TestCase):
+    def test_build_request(self):
         """
         Tests that 1 + 1 always equals 2.
         """
-        self.assertEqual(1 + 1, 2)
+        self.assertEqual(build_tpay_request,None)
