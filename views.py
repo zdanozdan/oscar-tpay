@@ -18,6 +18,7 @@ from django.utils.translation import ugettext as _
 from django.views.generic import View, TemplateView
 
 from oscar.core.loading import get_class, get_model
+from roll.signals import payment_received
 
 CheckoutSessionMixin = get_class('checkout.session', 'CheckoutSessionMixin')
 CheckoutSessionData = get_class('checkout.session', 'CheckoutSessionData')
@@ -97,6 +98,9 @@ class TpayAcceptPaymentView(PaymentDetailsView):
 
         # save payment event                                                                                                         
         self.save_payment_details(order)
+
+        #signal this order had been paid for
+        payment_received.send_robust(sender=self, order=order,amount=tpay_paid)
 
         #just 200 OK response to make tpay happy                                                                                     
         return HttpResponse('TRUE')
