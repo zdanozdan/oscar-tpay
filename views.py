@@ -27,6 +27,7 @@ Basket = get_model('basket', 'Basket')
 Orders = get_model('order', 'Order')
 Source = get_model('payment', 'Source')
 SourceType = get_model('payment', 'SourceType')
+TPaySourceType = get_model('payment', 'TPaySourceType')
 
 logger = logging.getLogger()
 LOGGING_PREFIX = 'tpay'
@@ -51,6 +52,33 @@ class TpayAcceptPaymentView(PaymentDetailsView):
             messages.error(request, e.message)
             return HttpResponseRedirect(reverse('basket:summary'))
 
+        TPAY_ID = settings.TPAY_ID
+        TPAY_SEC_CODE = settings.TPAY_SEC_CODE
+
+        source_names = [l.stockrecord.source_type.name for l in order.lines.select_related().all()]
+
+        #No split payments - all TPAY ids must be for one receiver
+        try:
+            test = source_names[0] #there have to be at least 1 item
+            tpay_source_types = TPaySourceType.objects.filter(name__in=source_names)
+            source_types_ids = [t.get_tpay_id() for t in tpay_source_types]
+
+            def all_same(items):
+                return all(x == items[0] for x in items)
+
+            test = source_types_ids[0]
+            if  all_same(source_types_ids):
+                tpay = tpay_source_types[0]
+                TPAY_ID = tpay.get_tpay_id()
+                TPAY_SEC_CODE = tpay.get_tpay_code()
+                print "Setting tpay id: (%s:%s)" % (tpay,TPAY_ID)
+            else:
+                print "There are different providers on this order. Unable to process payment"
+                return HttpResponseNotFound()
+        except:
+            print "Unable to find Tpay for this lines. List is empty"
+            return HttpResponseNotFound()
+
         # <QueryDict: {u'tr_id': [u'TR-AE9-GU2TDX'], u'tr_paid': [u'179.10'], u'tr_desc': [u'100015'], u'tr_email': [u'tomasz@enduhub.com'], u'tr_error'[u'none'], u'tr_date': [u'2017-05-11 14:29:12'], u'tr_amount': [u'179.10'], u'test_mode': [u'1'], u'tr_crc': [u''], u'tr_status': [u'TRUE'], u'md5sum': [u'7b73f39bacca881101ccaf3dcf07b07c'], u'id': [u'28921']}>                                                      
 
         #reverse proxy is unable to check remote address ip :-(                                                                             
@@ -58,17 +86,18 @@ class TpayAcceptPaymentView(PaymentDetailsView):
         
          #check error status                                                                                                                 
         if post.get('tr_error') != 'none':
-            logger.error('%s - TPAY error (%s)' % (LOGGING_PREFIX, post.get('tr_error')))
+            #logger.error('%s - TPAY error (%s)' % (LOGGING_PREFIX, post.get('tr_error')))
+            print('%s - TPAY error (%s)' % (LOGGING_PREFIX, post.get('tr_error')))
 
         # check order_number match                                                                                                          
         try:
             tpay_order_number = int(post.get('tr_desc'))
         except:
-            logger.error('%s - Unable to match order number from tr_dest field : (%s)' % (LOGGING_PREFIX, post.get('tr_desc')))
+            print('%s - Unable to match order number from tr_dest field : (%s)' % (LOGGING_PREFIX, post.get('tr_desc')))
             return HttpResponseNotFound()
 
         if order_number != tpay_order_number:
-            logger.error('%s - ordere number (%s) does not match tr_dest field : (%s)' % (LOGGING_PREFIX, order.number,post.get('tr_dest')))
+            print('%s - ordere number (%s) does not match tr_dest field : (%s)' % (LOGGING_PREFIX, order.number,post.get('tr_dest')))
             return HttpResponseNotFound()
 
 #check sum match
@@ -76,21 +105,21 @@ class TpayAcceptPaymentView(PaymentDetailsView):
             tpay_paid = D(post.get('tr_paid'))
             tpay_amount = D(post.get('tr_amount'))
         except:
-            logger.error('%s - Unable to reead numeric values from tr_paid : (%s) and tr_amount : (%s)' % (LOGGING_PREFIX, post.get('tr_paid'),post.get('tr_amount')))
+            print('%s - Unable to reead numeric values from tr_paid : (%s) and tr_amount : (%s)' % (LOGGING_PREFIX, post.get('tr_paid'),post.get('tr_amount')))
             return HttpResponseNotFound()
 
         # we accept any paid amount just log an error
         if order.total_incl_tax != tpay_paid:
-            logger.error('%s - order amount and paid do not match: (%s) : (%s)' % (LOGGING_PREFIX, order.total_incl_tax,tpay_paid))
+            print('%s - order amount and paid do not match: (%s) : (%s)' % (LOGGING_PREFIX, order.total_incl_tax,tpay_paid))
             #return HttpResponseNotFound()
 
         #check md5 is OK                                                                                                             
 
         md5 = hashlib.md5()
-        md5.update(settings.TPAY_ID+post.get('tr_id')+str(tpay_paid)+post.get('tr_crc')+settings.TPAY_SEC_CODE)
+        md5.update(TPAY_ID+post.get('tr_id')+str(tpay_paid)+post.get('tr_crc')+TPAY_SEC_CODE)
 
         if md5.hexdigest() != post.get('md5sum'):
-            logger.error('%s - MD5SUM does not match :  (%s)' % (LOGGING_PREFIX, md5.hexdigest()))
+            print('%s - MD5SUM does not match :  (%s)' % (LOGGING_PREFIX, md5.hexdigest()))
             return HttpResponseNotFound()
 
         # Payment successful! Record payment source                                                                                  
