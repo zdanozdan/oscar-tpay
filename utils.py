@@ -33,8 +33,13 @@ def build_tpay_request(amount,order_no,request,return_url=None):
 #       print str(TPAY_ID)
 #       print str(TPAY_SEC_CODE)
 
-    email = request.user.email
-    name = request.user.get_full_name().encode('utf-8')
+    try:        
+       email = request.user.email
+       name = request.user.get_full_name().encode('utf-8')
+    except:
+       email = order.guest_email 
+       name = email.encode('utf-8')
+
     amount = str(amount)
     order_no = str(order_no)
     TPAY_ID = str(TPAY_ID)
